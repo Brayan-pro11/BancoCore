@@ -1,0 +1,72 @@
+CASO 1: Carga masiva de transferencias, las transferencias se realizan uno a uno hasta que no hayan fondos, alli deben detenerse.
+
+DELIMITER $$
+
+CREATE TRIGGER validar_fondos_transferencia
+BEFORE INSERT ON transferencia
+FOR EACH ROW
+BEGIN
+
+    DECLARE saldo_actual DECIMAL(18,2);
+
+    SELECT Saldo_Actual
+    INTO saldo_actual
+    FROM cuenta_bancaria
+    WHERE Numero_Cuenta = NEW.Cuenta_Origen;
+
+    IF saldo_actual < NEW.Monto THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'No hay fondos para realizar la transferencia';
+
+    ELSE
+
+        UPDATE cuenta_bancaria
+        SET Saldo_Actual = Saldo_Actual - NEW.Monto
+        WHERE Numero_Cuenta = NEW.Cuenta_Origen;
+
+    END IF;
+
+END $$
+
+DELIMITER ;
+
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+CASO 2: Varias operaciones pendientes de aprobacion, con las aplicaciones masivas en los escenarios 1 a 1 donde la persona esta aprobando las transferencias, cuando una transferencia se realice y deje sin fondo a las demas, debe detenerse.
+
+DELIMITER $$
+
+CREATE TRIGGER validar_aprobacion_transferencia
+BEFORE UPDATE ON transferencia
+FOR EACH ROW
+BEGIN
+
+    DECLARE saldo_actual DECIMAL(18,2);
+
+    IF NEW.Estado_Transferencia = 'Aprobada' THEN
+
+        SELECT Saldo_Actual
+        INTO saldo_actual
+        FROM cuenta_bancaria
+        WHERE Numero_Cuenta = NEW.Cuenta_Origen;
+
+        IF saldo_actual < NEW.Monto THEN
+
+            SIGNAL SQLSTATE '45000'
+            SET MESSAGE_TEXT = 'No hay fondos suficientes para aprobar esta transferencia';
+
+        ELSE
+
+            UPDATE cuenta_bancaria
+            SET Saldo_Actual = Saldo_Actual - NEW.Monto
+            WHERE Numero_Cuenta = NEW.Cuenta_Origen;
+
+        END IF;
+
+    END IF;
+
+END $$
+
+DELIMITER ;
