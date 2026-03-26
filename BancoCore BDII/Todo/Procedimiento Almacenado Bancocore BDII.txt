@@ -1,0 +1,78 @@
+En el banco se ha presentado un incidente, causando que los triggers hayan dejado de ejecutarse causando que no se haya actualizado el saldo en las cuentas ni registrado las operaciones en la bitacora, sin embargo las transacciones se han seguido desarrollando con normalidad.
+como medida de contención la direccion del banco ha determinado bloquear el desarrollo de mas transacciones mientras corrigen el problema y se reestablece la data.
+como parte del equipo de soporte DBA del banco, su mision en este incidente es crear un procedimiento almacenado que mediante el uso de cursores, revise las transacciones que se han realizado desde la ultima escritura en la bitacora, y recree los saldos en la cuenta bancaria de cada usuario que haya hecho una transferencia en la ventana de la afectacion, con el fin de reestablecer los balances y corregir los montos.
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+-- PROCEDIMIENTO ALMACENADO
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_reconstruir_saldos_incidente()
+BEGIN
+
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE v_id_trans INT;
+    DECLARE v_cuenta_origen VARCHAR(20);
+    DECLARE v_cuenta_destino VARCHAR(20);
+    DECLARE v_monto DECIMAL(18,2);
+    DECLARE v_fecha DATETIME;
+    DECLARE v_ultima_bitacora DATETIME;
+
+    DECLARE cursor_transferencias CURSOR FOR 
+        SELECT ID_Transferencia, Cuenta_Origen, Cuenta_Destino, Monto, Fecha_Creacion
+        FROM transferencia
+        WHERE Fecha_Creacion > (SELECT IFNULL(MAX(Fecha_Hora_Operacion), '1900-01-01') FROM bitacora)
+        AND Estado_Transferencia = 'Ejecutada';
+
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    OPEN cursor_transferencias;
+
+    read_loop: LOOP
+        FETCH cursor_transferencias INTO v_id_trans, v_cuenta_origen, v_cuenta_destino, v_monto, v_fecha;
+        
+        IF done THEN
+            LEAVE read_loop;
+        END IF;
+
+        UPDATE cuenta_bancaria 
+        SET Saldo_Actual = Saldo_Actual - v_monto 
+        WHERE Numero_Cuenta = v_cuenta_origen;
+
+        UPDATE cuenta_bancaria 
+        SET Saldo_Actual = Saldo_Actual + v_monto 
+        WHERE Numero_Cuenta = v_cuenta_destino;
+
+        INSERT INTO bitacora (
+            Tipo_Operacion, 
+            Fecha_Hora_Operacion, 
+            ID_Usuario, 
+            Rol_Usuario, 
+            ID_Producto_Afectado, 
+            Datos_Detalle
+        ) 
+        VALUES (
+            'Recuperación Incidente - Transferencia',
+            v_fecha,
+            1,
+            'Soporte DBA',
+            v_id_trans,
+            JSON_OBJECT('monto', v_monto, 'status', 'Reconstruido')
+        );
+
+    END LOOP;
+
+    CLOSE cursor_transferencias;
+    
+    SELECT 'Proceso de reconstrucción finalizado con éxito' AS Resultado;
+
+END$$
+
+DELIMITER ;
+
+------------------------------------------------------------------------------------------------------------------
+
+PROBAR
+
+CALL sp_reconstruir_saldos_incidente();
