@@ -1,0 +1,177 @@
+SUB CONSULTAS
+
+-- Préstamos de clientes que existen
+
+SELECT 
+    p.ID_Prestamo,
+    p.ID_Cliente_Solicitante,
+    p.Monto_Solicitado
+FROM prestamo p
+WHERE EXISTS (
+    SELECT 1
+    FROM cliente_persona c
+    WHERE c.ID_Identificacion = p.ID_Cliente_Solicitante
+);
+
+-- Cuentas cuyos titulares tienen préstamos
+
+SELECT 
+    Numero_Cuenta,
+    ID_Titular,
+    Saldo_Actual
+FROM cuenta_bancaria
+WHERE ID_Titular IN (
+    SELECT ID_Cliente_Solicitante
+    FROM prestamo
+);
+
+-- Clientes que tienen al menos un préstamo
+
+SELECT Nombre_Completo, ID_Identificacion
+FROM cliente_persona
+WHERE ID_Identificacion IN (
+    SELECT ID_Cliente_Solicitante
+    FROM prestamo
+);
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+FILTROS DE IGUALACIÓN
+
+-- Préstamos aprobados
+
+SELECT ID_Prestamo, ID_Cliente_Solicitante, Monto_Solicitado
+FROM prestamo
+WHERE Estado_Prestamo = 'Aprobado';
+
+-- Préstamo con mayor monto
+
+SELECT ID_Prestamo, Monto_Solicitado
+FROM prestamo
+WHERE Monto_Solicitado = (
+    SELECT MAX(Monto_Solicitado)
+    FROM prestamo
+);
+
+-- Cliente que coincide con algún préstamo
+
+SELECT Nombre_Completo, ID_Identificacion
+FROM cliente_persona
+WHERE ID_Identificacion = (
+    SELECT ID_Cliente_Solicitante
+    FROM prestamo
+    LIMIT 1
+);
+
+-------------------------------------------------------------------------------------------------------------------
+
+JOIN 
+
+-- Clientes con sus préstamos
+
+SELECT 
+    c.Nombre_Completo,
+    c.ID_Identificacion,
+    p.ID_Prestamo,
+    p.Monto_Solicitado,
+    p.Estado_Prestamo
+FROM cliente_persona c
+JOIN prestamo p 
+    ON c.ID_Identificacion = p.ID_Cliente_Solicitante;
+
+-- Préstamos con correo del cliente
+
+SELECT 
+    p.ID_Prestamo,
+    p.Monto_Solicitado,
+    p.Estado_Prestamo,
+    c.Correo
+FROM prestamo p
+JOIN cliente_persona c
+    ON p.ID_Cliente_Solicitante = c.ID_Identificacion;
+
+-- Total de préstamos por cliente
+
+SELECT 
+    c.Nombre_Completo,
+    COUNT(p.ID_Prestamo) AS total_prestamos
+FROM cliente_persona c
+JOIN prestamo p
+    ON c.ID_Identificacion = p.ID_Cliente_Solicitante
+GROUP BY c.Nombre_Completo;
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+LEFT JOIN
+
+-- Clientes SIN préstamos
+
+SELECT 
+    c.Nombre_Completo,
+    c.ID_Identificacion
+FROM cliente_persona c
+LEFT JOIN prestamo p
+    ON c.ID_Identificacion = p.ID_Cliente_Solicitante
+WHERE p.ID_Prestamo IS NULL;
+
+-- Total solicitado por cliente (aunque no tenga)
+
+SELECT 
+    c.Nombre_Completo,
+    c.ID_Identificacion,
+    IFNULL(SUM(p.Monto_Solicitado), 0) AS total_solicitado
+FROM cliente_persona c
+LEFT JOIN prestamo p
+    ON c.ID_Identificacion = p.ID_Cliente_Solicitante
+GROUP BY c.ID_Identificacion, c.Nombre_Completo;
+
+-- Transferencias con creador y aprobador
+
+SELECT 
+    t.ID_Transferencia,
+    u1.Nombre_Completo AS Creador,
+    u2.Nombre_Completo AS Aprobador,
+    t.Estado_Transferencia
+FROM transferencia t
+LEFT JOIN usuario u1
+    ON t.ID_Usuario_Creador = u1.ID_Usuario
+LEFT JOIN usuario u2
+    ON t.ID_Usuario_Aprobador = u2.ID_Usuario;
+
+----------------------------------------------------------------------------------------------------------------
+
+RIGHT JOIN
+
+-- Usuarios y sus transferencias
+
+SELECT 
+    u.Nombre_Completo,
+    t.ID_Transferencia,
+    t.Estado_Transferencia
+FROM transferencia t
+RIGHT JOIN usuario u
+    ON t.ID_Usuario_Creador = u.ID_Usuario;
+
+-- Transferencias con fecha por usuario
+
+SELECT 
+    u.Nombre_Completo,
+    t.ID_Transferencia,
+    t.Fecha_Creacion
+FROM transferencia t
+RIGHT JOIN usuario u
+    ON t.ID_Usuario_Creador = u.ID_Usuario
+ORDER BY u.Nombre_Completo;
+
+-- Cuentas y préstamos desembolsados
+
+SELECT 
+    c.Numero_Cuenta,
+    c.ID_Titular,
+    p.ID_Prestamo,
+    p.Monto_Aprobado,
+    p.Fecha_Desembolso
+FROM prestamo p
+RIGHT JOIN cuenta_bancaria c
+    ON p.Cuenta_Destino_Desembolso = c.Numero_Cuenta
+ORDER BY c.Numero_Cuenta;
